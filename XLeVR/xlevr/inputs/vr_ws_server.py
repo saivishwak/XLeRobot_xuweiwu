@@ -261,6 +261,12 @@ class VRWebSocketServer(BaseInputProvider):
                     mode=ControlMode.POSITION_CONTROL,
                     relative_position=relative_position,
                     relative_rotvec=relative_rotvec,
+                    # Patch: also ship absolute controller rotation per frame
+                    # (upstream only set this on RESET goals). Lets downstream
+                    # consumers do drift-free wrist tracking via
+                    # `current_quat × anchor_quat.inv()` instead of integrating
+                    # per-frame rotvec deltas.
+                    vr_ctrl_rotation=Rotation.from_quat(current_quat),
                     trigger=trigger,
                     thumbstick=thumbstick,
                     buttons=buttons,

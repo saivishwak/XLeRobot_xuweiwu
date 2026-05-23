@@ -220,7 +220,9 @@ class VRWebSocketServer(BaseInputProvider):
                 
                 # reset original quaternion
                 if quaternion and all(k in quaternion for k in ['x', 'y', 'z', 'w']):
-                    controller.origin_quaternion = np.array([quaternion['x'], quaternion['y'], quaternion['z'], quaternion['w']])
+                    controller.origin_quaternion = self.quat_normalize(
+                        np.array([quaternion['x'], quaternion['y'], quaternion['z'], quaternion['w']])
+                    )
                 else:
                     controller.origin_quaternion = self.euler_to_quaternion(rotation) if rotation else None
                 
@@ -230,6 +232,7 @@ class VRWebSocketServer(BaseInputProvider):
                 reset_goal = ControlGoal(
                     arm=hand,
                     mode=ControlMode.RESET,
+                    vr_ctrl_position=controller.origin_position.copy(),
                     vr_ctrl_rotation=controller.origin_rotation,
                     metadata={
                         "source": f"vr_grip_reset_{hand}",
@@ -248,9 +251,13 @@ class VRWebSocketServer(BaseInputProvider):
                 controller.origin_position = current_position
                 
                 if quaternion and all(k in quaternion for k in ['x', 'y', 'z', 'w']):
-                    current_quat = np.array([quaternion['x'], quaternion['y'], quaternion['z'], quaternion['w']])
+                    current_quat = self.quat_normalize(
+                        np.array([quaternion['x'], quaternion['y'], quaternion['z'], quaternion['w']])
+                    )
                 else:
                     current_quat = self.euler_to_quaternion(rotation)
+                if controller.origin_quaternion is not None and np.dot(controller.origin_quaternion, current_quat) < 0.0:
+                    current_quat = -current_quat
 
                 relative_rotvec_unscaled = self.compute_relative_rotvec(controller.origin_quaternion, current_quat)
                 relative_rotvec = relative_rotvec_unscaled * self.config.vr_to_robot_ori_scale
@@ -266,6 +273,7 @@ class VRWebSocketServer(BaseInputProvider):
                     # consumers do drift-free wrist tracking via
                     # `current_quat × anchor_quat.inv()` instead of integrating
                     # per-frame rotvec deltas.
+                    vr_ctrl_position=current_position.copy(),
                     vr_ctrl_rotation=Rotation.from_quat(current_quat),
                     trigger=trigger,
                     thumbstick=thumbstick,
@@ -277,8 +285,9 @@ class VRWebSocketServer(BaseInputProvider):
                 await self.send_goal(goal)
             
     
-    async def handle_grip_release(self, hand: str, buttons):
+    async def handle_grip_release(self, hand: str, buttons=None):
         """Handle grip release for a controller."""
+        buttons = buttons or {}
         if hand == 'left':
             controller = self.left_controller
         elif hand == 'right':
@@ -412,6 +421,8 @@ class VRWebSocketServer(BaseInputProvider):
                 print(f"   Relative Position: {goal.relative_position}")
             if goal.relative_rotvec is not None:
                 print(f"   Relative Rotvec: {goal.relative_rotvec}")
+            if goal.vr_ctrl_position is not None:
+                print(f"   VR Position: {goal.vr_ctrl_position}")
             if goal.vr_ctrl_rotation is not None:
                 print(f"   VR Frame: {goal.vr_ctrl_rotation}")
             if goal.trigger is not None:

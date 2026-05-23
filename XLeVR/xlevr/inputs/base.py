@@ -26,6 +26,7 @@ class ControlGoal:
     trigger: Optional[bool] = None                 # trigger status
     thumbstick: Optional[Dict[str, Any]] = None    # thumbstick info
     buttons: Optional[Dict[str, Any]] = None       # buttons info
+    vr_ctrl_position: Optional[np.ndarray] = None  # absolute VR controller position
     vr_ctrl_rotation: Optional[Rotation] = None    # vr ctrl original rotation when grip pressed
     
     # Additional data for debugging/monitoring

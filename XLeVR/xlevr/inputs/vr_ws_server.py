@@ -32,6 +32,9 @@ class VRControllerState:
         # Quaternion-based rotation tracking (more stable than Euler)
         self.origin_quaternion = None
         self.origin_rotation = None
+        # Last absolute controller orientation while grip was held — used on
+        # grip-release IDLE goals (the release frame has no pose payload).
+        self.last_vr_ctrl_rotation: Optional[Rotation] = None
     
     def reset_grip(self):
         """Reset grip state but preserve trigger state."""
@@ -39,6 +42,7 @@ class VRControllerState:
         self.origin_position = None
         self.origin_rotation = None
         self.origin_quaternion = None
+        self.last_vr_ctrl_rotation = None
     
     def reset_origin(self):
         """Reset origin position and rotation for auto-control mode."""
@@ -227,6 +231,7 @@ class VRWebSocketServer(BaseInputProvider):
                     controller.origin_quaternion = self.euler_to_quaternion(rotation) if rotation else None
                 
                 controller.origin_rotation = Rotation.from_quat(controller.origin_quaternion)
+                controller.last_vr_ctrl_rotation = controller.origin_rotation
 
                 # send reset goal
                 reset_goal = ControlGoal(
@@ -262,6 +267,7 @@ class VRWebSocketServer(BaseInputProvider):
                 relative_rotvec_unscaled = self.compute_relative_rotvec(controller.origin_quaternion, current_quat)
                 relative_rotvec = relative_rotvec_unscaled * self.config.vr_to_robot_ori_scale
                 controller.origin_quaternion = current_quat
+                controller.last_vr_ctrl_rotation = Rotation.from_quat(current_quat)
                 
                 goal = ControlGoal(
                     arm=hand,
@@ -298,11 +304,15 @@ class VRWebSocketServer(BaseInputProvider):
         # Only reset grip and send idle command when it is not reset
         # or when button pressed
         if controller.grip_active:
-            controller.reset_grip() 
+            # Snapshot orientation before clearing grip state — the calibration
+            # wizard's wrist-verify step needs the release quaternion.
+            release_rotation = controller.last_vr_ctrl_rotation
+            controller.reset_grip()
             # Send idle goal to stop arm control
             goal = ControlGoal(
                 arm=hand,
                 mode=ControlMode.IDLE,
+                vr_ctrl_rotation=release_rotation,
                 buttons=buttons,
                 metadata={
                     "source": "vr_grip_release",

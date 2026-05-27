@@ -35,6 +35,7 @@ class VRControllerState:
         # Last absolute controller orientation while grip was held — used on
         # grip-release IDLE goals (the release frame has no pose payload).
         self.last_vr_ctrl_rotation: Optional[Rotation] = None
+        self.last_buttons: Dict[str, bool] = {}
     
     def reset_grip(self):
         """Reset grip state but preserve trigger state."""
@@ -210,12 +211,13 @@ class VRWebSocketServer(BaseInputProvider):
         grip_active = data.get('gripActive', False)
         trigger = data.get('trigger', 0)
         thumbstick = data.get('thumbstick', {})
-        buttons = data.get('buttons', {})
+        buttons = {str(k): bool(v) for k, v in (data.get('buttons', {}) or {}).items()}
         
         controller = self.left_controller if hand == 'left' else self.right_controller        
         if not grip_active:
             await self.handle_grip_release(hand, buttons)
         else:
+            controller.last_buttons = dict(buttons)
             if not controller.grip_active:
                 controller.grip_active = True
 
@@ -239,6 +241,7 @@ class VRWebSocketServer(BaseInputProvider):
                     mode=ControlMode.RESET,
                     vr_ctrl_position=controller.origin_position.copy(),
                     vr_ctrl_rotation=controller.origin_rotation,
+                    buttons=buttons,
                     metadata={
                         "source": f"vr_grip_reset_{hand}",
                     }
@@ -293,7 +296,7 @@ class VRWebSocketServer(BaseInputProvider):
     
     async def handle_grip_release(self, hand: str, buttons=None):
         """Handle grip release for a controller."""
-        buttons = buttons or {}
+        buttons = {str(k): bool(v) for k, v in (buttons or {}).items()}
         if hand == 'left':
             controller = self.left_controller
         elif hand == 'right':
@@ -318,12 +321,16 @@ class VRWebSocketServer(BaseInputProvider):
                     "source": "vr_grip_release",
                 }
             )
+            controller.last_buttons = dict(buttons)
             await self.send_goal(goal)
             logger.info(f"🔓 {hand.upper()} grip released - arm control stopped")
             return
         
-        if any(buttons.values()):
-            # Send idle goal with any button-pressed events
+        if buttons != controller.last_buttons:
+            # Send every face-button state transition, including all-false
+            # releases. The backend edge detector needs the release to arm the
+            # next B-button recording toggle.
+            controller.last_buttons = dict(buttons)
             goal = ControlGoal(
                 arm=hand,
                 mode=ControlMode.IDLE,

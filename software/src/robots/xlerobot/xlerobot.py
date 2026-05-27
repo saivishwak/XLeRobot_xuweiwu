@@ -604,13 +604,19 @@ class XLerobot(Robot):
             present_pos_right = self.bus_right_head.sync_read("Present_Position", self.right_arm_motors)
             present_pos_head = self.bus_right_head.sync_read("Present_Position", self.head_motors)
 
-            # Combine all present positions
-            present_pos = {**present_pos_left, **present_pos_right, **present_pos_head}
-
-            # Ensure safe goal position for each arm and head
-            goal_present_pos = {
-                key: (g_pos, present_pos[key]) for key, g_pos in chain(left_arm_pos.items(), right_arm_pos.items(), head_pos.items())
+            present_pos_raw = {**present_pos_left, **present_pos_right, **present_pos_head}
+            present_pos = {
+                (k if k.endswith(".pos") else f"{k}.pos"): v for k, v in present_pos_raw.items()
             }
+
+            goal_present_pos = {}
+            for key, g_pos in chain(left_arm_pos.items(), right_arm_pos.items(), head_pos.items()):
+                motor = key.removesuffix(".pos")
+                present_val = present_pos.get(key, present_pos_raw.get(motor))
+                if present_val is None:
+                    logger.warning("send_action: no present position for %s; skipping clamp", key)
+                    continue
+                goal_present_pos[key] = (g_pos, present_val)
             safe_goal_pos = ensure_safe_goal_position(goal_present_pos, self.config.max_relative_target)
 
             # Update the action with the safe goal positions

@@ -125,7 +125,7 @@ class XLeVRConfig:
     vr_to_robot_pos_scale: float = VR_TO_ROBOT_POS_SCALE
     vr_to_robot_ori_scale: float = VR_TO_ROBOT_ORI_SCALE
     # Optionally, webapp_dir if used elsewhere
-    webapp_dir: str = "webapp"
+    webapp_dir: str = "dashboard"
     def __post_init__(self):
         if self.follower_ports is None:
             self.follower_ports = {
